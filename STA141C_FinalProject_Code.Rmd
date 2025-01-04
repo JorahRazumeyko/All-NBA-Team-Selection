@@ -1,0 +1,374 @@
+---
+title: "STA141C Final Project Code"
+author: "Matthew Holcomb"
+date: "2024-06-10"
+output: html_document
+---
+
+This file contains the R Code used in our final project. It is a combination of
+two different files for both the Pre-Processing and Logistic Regression portions.
+
+```{r Get Data}
+# Read in the full data set
+NBA_Data <- read.csv("NBA_Player_Stats.csv")
+NBA_Data <- NBA_Data[,-1] # Remove an unnecessary column which R generates
+
+NBA_Data$All_NBA <- as.logical(NBA_Data$All_NBA)
+
+rownames(NBA_Data) <- paste(NBA_Data$Player, NBA_Data$Year, NBA_Data$Tm)
+
+columns <- c("Year", "Pos", "All_NBA", "Voting_Points", "All_NBA_Team", 
+             "PTS", "TRB", "AST", "BLK", "STL", "W.L", "FGA", "FG.", "eFG.", 
+             "FT", "FT.", "MP", "G", "GS")
+
+stat_columns = c("PTS", "TRB", "AST", "BLK", "STL", "W.L", "FGA", 
+                 "FG.", "eFG.", "FT", "FT.", "MP", "G", "GS")
+
+data = NBA_Data[,columns]
+
+# We will only standardize the columns that we will be using as our predictors
+data.scaled <- data
+
+# Standardize the data by season using scale()
+for (year in 2004:2024) {
+  data.scaled[data.scaled$Year == year,stat_columns] <- scale(data[data$Year == year,stat_columns])
+}
+
+# write.csv(data.scaled,"Data/Scaled_Data.csv", row.names = TRUE)
+# write.csv(data, "Data/Organized_Data.csv", row.names = TRUE)
+```
+
+\newpage
+
+# Visualizing the Transformed Data
+
+We can visualize the transformed data using the `PTS` values for three different years.
+The mean is listed next to the year in the plot titles.
+
+```{r, echo=F, fig.dim=c(6,4)}
+par(mfrow = c(2,3))
+
+# Original (2004, 2012, 2023)
+hist(data[data$Year == 2004,]$PTS, 
+     main = paste0("Original (2004, ", 
+                  round(mean(data$PTS[data$Year == 2004]), 3),
+                  ")"),
+     xlab = "Original PTS", ylab = "Frequency", col = "lightblue")
+hist(data[data$Year == 2012,]$PTS, 
+     main = paste0("Original (2012, ", 
+                  round(mean(data$PTS[data$Year == 2012]), 3),
+                  ")"),
+     xlab = "Original PTS", ylab = "Frequency", col = "lightblue")
+hist(data[data$Year == 2023,]$PTS, 
+     main = paste0("Original (2023, ", 
+                  round(mean(data$PTS[data$Year == 2023]), 3),
+                  ")"),
+     xlab = "Original PTS", ylab = "Frequency", col = "lightblue")
+
+# Transformed (2004, 2012, 2023)
+hist(data.scaled[data.scaled$Year == 2004,]$PTS, 
+     main = paste0("Transformed (2004, ", 
+                  round(mean(data.scaled$PTS[data.scaled$Year == 2004]), 3),
+                  ")"),
+     xlab = "Transformed PTS", ylab = "Frequency", col = "lightblue")
+hist(data.scaled[data.scaled$Year == 2012,]$PTS, 
+     main = paste0("Transformed (2012, ", 
+                  round(mean(data.scaled$PTS[data.scaled$Year == 2012]), 3),
+                  ")"),
+     xlab = "Transformed PTS", ylab = "Frequency", col = "lightblue")
+hist(data.scaled[data.scaled$Year == 2023,]$PTS, 
+     main = paste0("Transformed (2023, ", 
+                  round(mean(data.scaled$PTS[data.scaled$Year == 2023]), 3),
+                  ")"),
+     xlab = "Transformed PTS", ylab = "Frequency", col = "lightblue")
+```
+
+The transformation allows each year to theoretically be compared evenly. For instance,
+if a player in 2004 scored 500 total points and was the top scorer for that year, but
+in 2023, ten players scored 500+ points, we would want the model to recognize the
+500 point season in 2004 as more influential/impressive.
+
+## Tables for Presentation Slides
+
+```{r}
+library(knitr)
+tbl_columns = c("Year", "All_NBA", "PTS", "AST", "TRB", "W.L")
+tbl_players = c("LeBron James 2023 LAL", "Stephen Curry 2023 GSW", "De'Aaron Fox 2023 SAC")
+kable(data[tbl_players,tbl_columns])
+
+kable(data.scaled[tbl_players,tbl_columns])
+```
+
+```{r}
+Scaled_vs_Regular <- rbind(
+  data["LeBron James 2021 LAL",tbl_columns],
+  data["LeBron James 2022 LAL",tbl_columns],
+  data.scaled["LeBron James 2021 LAL",tbl_columns],
+  data.scaled["LeBron James 2022 LAL",tbl_columns]
+)
+
+Scaled_vs_Regular[,3:6] <- round(Scaled_vs_Regular[,3:6], 3)
+rownames(Scaled_vs_Regular) <- c(
+  "LeBron James 2021 LAL",
+  "LeBron James 2022 LAL",
+  "LeBron James 2021 LAL (Scaled)",
+  "LeBron James 2022 LAL (Scaled)"
+)
+
+kable(Scaled_vs_Regular)
+```
+
+\newpage
+
+# Data Exploration
+
+```{r}
+library(ggplot2)
+
+ggplot() +
+  geom_point(data = subset(data.scaled, Year < 2024 & !All_NBA), 
+             mapping = aes(x = PTS, y = AST, color = "FALSE")) +
+  geom_point(data = subset(data.scaled, Year < 2024 & All_NBA), 
+             mapping = aes(x = PTS, y = AST, color = "TRUE")) +
+  labs(title = NULL,
+       x = "Points (Scaled)", y = "Assists (Scaled)",
+       color = "All-NBA") +
+  theme(text = element_text(size = 20))
+
+ggsave(
+  filename = "PTS_AST.png",
+  device = "png"
+)
+
+ggplot(data = subset(data.scaled, Year < 2024)) +
+  geom_boxplot(mapping = aes(x = W.L, color = All_NBA)) +
+  labs(title = NULL,
+       x = "W/L Percentage (Scaled)", y = "",
+       color = "All-NBA") +
+  theme(
+    text = element_text(size = 20),
+    axis.text.y = element_blank()
+  )
+  
+
+ggsave(
+  filename = "W_L.png",
+  device = "png"
+)
+```
+
+```{r Get Data, echo = F}
+# data.scaled <- read.csv("Data/Scaled_Data.csv", row.names = 1)
+
+data.scaled$Voting_Points <- as.integer(data.scaled$Voting_Points)
+```
+
+### Logistic Regression Results Plot
+
+```{r LogReg and Plot, echo = F, warning = F}
+library(tidyr)
+library(MASS)
+library(knitr)
+
+Do_LogReg <- function(the.data, year, year_range = 5, Positionless = FALSE, Cutoff = 0, Full = FALSE) {
+
+  # Identify the training and test data
+  train <- subset(the.data, Year %in% (year-year_range):(year-1))
+  test <- subset(the.data, Year == year & G > Cutoff)
+
+  # Initialize the full model
+  full.model <- glm(All_NBA ~ . -Voting_Points -All_NBA_Team -Year, 
+                    data = train, family = binomial)
+  
+  # Find the best model using stepAIC
+  step.model <- full.model %>% stepAIC(trace = FALSE, direction = "backward")
+  
+  # Store the coefficients used in the best model
+  coefficients <- coef(step.model)
+  
+  # Make predictions using new model
+  test$prob <- predict(step.model, newdata = test, type = "response")
+  
+  predicted <- subset(test[order(test$prob, decreasing = TRUE),], 
+                      select = c("Pos", "prob", "All_NBA"))
+  
+  if (Full) {
+    new_predicted <- predicted
+  } else {
+    if (Positionless) {
+      new_predicted <- predicted[1:15,]
+    } else {
+      FC <- subset(predicted, Pos == "Frontcourt")
+      BC <- subset(predicted, Pos == "Backcourt")
+      
+      new_predicted <- data.frame()
+      
+      for (i in 0:2) {
+        new_predicted <- rbind(new_predicted, BC[(1 + i*2):((i+1)*2),])
+        new_predicted <- rbind(new_predicted, FC[(1 + i*3):((i+1)*3),])
+      }
+    }
+    
+    new_predicted$Pred_Team <- c(rep(1,5), rep(2,5), rep(3,5))
+  }
+  
+  return(list(new_predicted = new_predicted, coefficients = coefficients))
+}
+
+Results_Two <- list()
+Results_Four <- list()
+Results_Eight <- list()
+
+Coefficients_Two <- list()
+Coefficients_Four <- list()
+Coefficients_Eight <- list()
+
+YEARS <- 2012:2023
+
+for (year in YEARS) {
+  two_years <- Do_LogReg(data.scaled, year, year_range = 2)
+  four_years <- Do_LogReg(data.scaled, year, year_range = 4)
+  eight_years <- Do_LogReg(data.scaled, year, year_range = 8)
+  
+  Results_Two[[as.character(year)]] <- two_years$new_predicted
+  Coefficients_Two[[as.character(year)]] <- two_years$coefficients
+  
+  Results_Four[[as.character(year)]] <- four_years$new_predicted
+  Coefficients_Four[[as.character(year)]] <- four_years$coefficients
+  
+  Results_Eight[[as.character(year)]] <- eight_years$new_predicted
+  Coefficients_Eight[[as.character(year)]] <- eight_years$coefficients
+}
+
+Accuracies <- data.frame()
+Snubs <- c()
+
+for (year in YEARS) {
+  correct_two <- sum(Results_Two[[as.character(year)]]$All_NBA)
+  correct_four <- sum(Results_Four[[as.character(year)]]$All_NBA)
+  correct_eight <- sum(Results_Eight[[as.character(year)]]$All_NBA)
+  
+  Accuracies <- rbind(Accuracies, data.frame(correct_two, correct_four, correct_eight, year))
+}
+
+ggplot(data = Accuracies) +
+  geom_line(aes(x = year, y = correct_two, color = "2")) +
+  geom_line(aes(x = year, y = correct_four, color = "4")) +
+  geom_line(aes(x = year, y = correct_eight, color = "8")) +
+  labs(title = "All-NBA Prediction Accuracy by Year",
+       x = "Year", y = "# Correct",
+       color = "n") +
+  ylim(0, 15)
+
+ggsave(
+  filename = "LogReg.png",
+  device = "png",
+  width = 10,
+  height = 6,
+  units = 'cm'
+)
+```
+
+\newpage
+
+### Coefficents Table
+
+The following table contains coefficients chosen through backward step-wise selection,
+where the training data used was the previous 4 years to the listed season.
+
+```{r Coefs, echo = F}
+stat_columns <- colnames(data.scaled)[6:(length(data.scaled))]
+stat_columns <- c(stat_columns, c("PosFrontcourt", "PosBackcourt"))
+
+M = matrix(data = 0, nrow = length(YEARS), ncol = length(stat_columns)+1,
+           dimnames = list(YEARS, c("(Intercept)", stat_columns)))
+
+for (year in as.character(YEARS)) {
+  df <- data.frame(
+    name = names(Coefficients_Four[[year]]),
+    val = round(as.numeric(Coefficients_Four[[year]]), 2)
+  )
+  for (i in 1:nrow(df)) {
+    M[year, df$name[i]] <- df$val[i]
+  }
+}
+
+print(M)
+```
+
+\newpage
+
+### Snubs and Reaches
+
+```{r Snubs, echo = F}
+Snubs <- c()
+Years <- c()
+
+for (year in YEARS) {
+  snubs_scaled <- rownames(subset(Results_Four[[as.character(year)]], !All_NBA))
+  
+  Snubs <- c(Snubs, snubs_scaled)
+  Years <- c(Years, rep(as.character(year), length(snubs_scaled)))
+}
+
+Snubs <- sapply(Snubs, FUN = function(x) return(unlist(strsplit(x, " 2"))[1]), simplify = FALSE)
+Snubs <- unlist(Snubs)
+
+Snubs_df <- data.frame(
+  table(Snubs)
+)
+
+Snubs_df$Years <- sapply(X = Snubs_df$Snubs, FUN = function(x) paste(Years[Snubs == x], collapse=" "))
+
+Snubs_df <- Snubs_df[order(Snubs_df$Freq, decreasing = TRUE),]
+rownames(Snubs_df) <- NULL
+
+kable(subset(Snubs_df, Freq > 1))
+```
+
+```{r Reaches, echo = F}
+Reaches <- c()
+Years <- c()
+
+for (year in YEARS) {
+  actual <- rownames(subset(data.scaled, Year == year & All_NBA))
+  pred_scaled <- rownames(Results_Four[[as.character(year)]])
+  
+  reaches_scaled <- actual[!(actual %in% pred_scaled)]
+  
+  Reaches <- c(Reaches, reaches_scaled)
+  Years <- c(Years, rep(as.character(year), length(reaches_scaled)))
+}
+
+Reaches <- sapply(Reaches, FUN = function(x) return(unlist(strsplit(x, " 2"))[1]), simplify = FALSE)
+Reaches <- unlist(Reaches)
+
+Reaches_df <- data.frame(
+  table(Reaches)
+)
+
+Reaches_df$Years <- sapply(X = Reaches_df$Reaches, FUN = function(x) paste(Years[Reaches == x], collapse=" "))
+
+Reaches_df <- Reaches_df[order(Reaches_df$Freq, decreasing = TRUE),]
+rownames(Reaches_df) <- NULL
+
+kable(subset(Reaches_df, Freq > 1))
+```
+
+\newpage
+
+### 2024 Predictions
+
+```{r Pred_Table, echo = F, warning = F}
+kable(subset(Do_LogReg(data.scaled, 2024, Cutoff = 0.738, Full = FALSE,
+                       Positionless = TRUE, year_range = 4)$new_predicted, 
+             select = prob))
+```
+
+```{r}
+for (year in YEARS) {
+  n = nrow(subset(data.scaled, Year == year))
+  incorrect = 15 - Accuracies$correct_four[Accuracies$year == year]
+  print((n - incorrect) / n)
+}
+```
